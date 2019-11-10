@@ -1,28 +1,12 @@
 import asyncio, io, glob, os, sys, time, uuid, requests
 from urllib.parse import urlparse
 from io import BytesIO
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFile
 from azure.cognitiveservices.vision.face import FaceClient
 from msrest.authentication import CognitiveServicesCredentials
 from azure.cognitiveservices.vision.face.models import TrainingStatusType, Person, SnapshotObjectType, OperationStatusType
 
-
-def getRectangle(faceDictionary):
-    rect = faceDictionary.face_rectangle
-    left = rect.left
-    top = rect.top
-    bottom = left + rect.height
-    right = top + rect.width
-    print(((left, top), (bottom, right)))
-    return ((left, top), (bottom, right))
-def getRectangle2(faceDictionary):
-    rect = faceDictionary.face_rectangle
-    left = rect.left
-    top = rect.top
-    bottom = left + rect.height
-    right = top + rect.width
-    print(((left, top), (bottom, right)))
-    return (left, top, right, bottom)
+ImageFile.LOAD_TRUNCATED_IMAGES = True
     
 def getConfig(name = 'config.txt'):
     filename = name
@@ -37,20 +21,25 @@ def getConfig(name = 'config.txt'):
             return configs
     except FileNotFoundError:
         print("'%s' file not found" % filename)
+
+def placeDevito(image, dev_img, fc):
+    points = fc.face_rectangle
+    dev_img = dev_img.resize((points.width, points.height))
+    image.paste(dev_img, box=(points.left,points.top,points.left+points.width,points.top+points.height), mask=None) 
     
 if __name__ == "__main__":
 
     configs = getConfig()
     KEY = configs['key']
     ENDPOINT = configs['endpoint']
+    BABY_THRESHOLD = 10
     
     
     single_face_image_url = sys.argv[1]
-    single_image_name = os.path.basename(single_face_image_url)
     response = requests.get(single_face_image_url)
-    img = Image.open(BytesIO(response.content))
+    img = Image.open(io.BytesIO(response.content))
 
-    devito_file = "C:\\Users\\Conno\\Classes\\CS4650\\final\\devito1.png"
+    devito_file = "devito1.png"
     #response2 = requests.get(devito_url)
     devito_img = Image.open(devito_file)
     
@@ -60,17 +49,18 @@ if __name__ == "__main__":
 
     detected_faces = face_client.face.detect_with_url(url=single_face_image_url, return_face_attributes=['age','gender'])
     if not detected_faces:
-        raise Exception('No face detected from image {}'.format(single_image_name))
+        print("No faces, baby or otherwise.")
+        exit()
 
     draw = ImageDraw.Draw(img)
     minFace = detected_faces[0]
     for face in detected_faces:
         print(face.face_rectangle)
-        if face.face_attributes.age < minFace.face_attributes.age:
-            minFace = face
+        if float(face.face_attributes.age) < BABY_THRESHOLD:
+            placeDevito(img, devito_img, face)
     
-    points = minFace.face_rectangle
-    devito_img = devito_img.resize((points.width, points.height))
-    img.paste(devito_img, box=(points.left,points.top,points.left+points.width,points.top+points.height), mask=None)   
+    #points = minFace.face_rectangle
+    #devito_img = devito_img.resize((points.width, points.height))
+    #img.paste(devito_img, box=(points.left,points.top,points.left+points.width,points.top+points.height), mask=None)   
 
     img.show()
