@@ -31,6 +31,101 @@ def getConfig(name = 'config.txt'):
             return configs
     except FileNotFoundError:
         print("'%s' file not found" % filename)
+        
+def showPoints(img, face):
+    '''
+     :param pupil_left:
+    :type pupil_left: ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param pupil_right:
+    :type pupil_right: ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param nose_tip:
+    :type nose_tip: ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param mouth_left:
+    :type mouth_left: ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param mouth_right:
+    :type mouth_right: ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eyebrow_left_outer:
+    :type eyebrow_left_outer:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eyebrow_left_inner:
+    :type eyebrow_left_inner:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eye_left_outer:
+    :type eye_left_outer:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eye_left_top:
+    :type eye_left_top: ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eye_left_bottom:
+    :type eye_left_bottom:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eye_left_inner:
+    :type eye_left_inner:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eyebrow_right_inner:
+    :type eyebrow_right_inner:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eyebrow_right_outer:
+    :type eyebrow_right_outer:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eye_right_inner:
+    :type eye_right_inner:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eye_right_top:
+    :type eye_right_top:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eye_right_bottom:
+    :type eye_right_bottom:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param eye_right_outer:
+    :type eye_right_outer:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param nose_root_left:
+    :type nose_root_left:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param nose_root_right:
+    :type nose_root_right:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param nose_left_alar_top:
+    :type nose_left_alar_top:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param nose_right_alar_top:
+    :type nose_right_alar_top:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param nose_left_alar_out_tip:
+    :type nose_left_alar_out_tip:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param nose_right_alar_out_tip:
+    :type nose_right_alar_out_tip:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param upper_lip_top:
+    :type upper_lip_top:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param upper_lip_bottom:
+    :type upper_lip_bottom:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param under_lip_top:
+    :type under_lip_top:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    :param under_lip_bottom:
+    :type under_lip_bottom:
+     ~azure.cognitiveservices.vision.face.models.Coordinate
+    '''
+    m = face.face_landmarks
+    
+    #all the 27 available face landmarks
+    areas = [m.pupil_left,m.pupil_right,m.mouth_left,m.mouth_right,m.nose_tip,m.eyebrow_left_inner,m.eyebrow_left_outer,m.eyebrow_right_inner,
+             m.eyebrow_right_outer, m.eye_left_bottom, m.eye_left_inner, m.eye_left_outer, m.eye_left_top, m.eye_right_bottom, m.eye_right_inner,
+             m.eye_right_outer, m.eye_right_top, m.nose_root_left, m.nose_root_right, m.nose_left_alar_top, m.nose_right_alar_top, m.nose_left_alar_out_tip,
+             m.nose_right_alar_out_tip, m.upper_lip_top, m.upper_lip_bottom, m.under_lip_bottom, m.under_lip_top]
+    
+    draw = ImageDraw.Draw(img)
+    
+    #draw dots at all points
+    for area in areas:
+        x = area.x
+        y = area.y
+        radius = 2
+        draw.ellipse([x-radius,y-radius,x+radius,y+radius], fill='red')
 
 def normalizeDevito(image, dev_img, points):
     dev_array = np.array(dev_img, dtype=np.uint8)
@@ -94,7 +189,7 @@ def processImage(url):
     
     face_client = FaceClient(ENDPOINT, CognitiveServicesCredentials(KEY))
 
-    detected_faces = face_client.face.detect_with_url(url=single_face_image_url, return_face_attributes=['age','gender'])
+    detected_faces = face_client.face.detect_with_url(url=single_face_image_url, return_face_landmarks=True, return_face_attributes=['age','gender'])
     if not detected_faces:
         print("No faces, baby or otherwise.")
         return
@@ -102,10 +197,9 @@ def processImage(url):
     draw = ImageDraw.Draw(img)
     minFace = detected_faces[0]
     for face in detected_faces:
-        print(face.face_rectangle)
         if float(face.face_attributes.age) < BABY_THRESHOLD:
-            img = cloneDevito(img, devito_img, face)
-            break
+            showPoints(img, face)
+            #img = cloneDevito(img, devito_img, face)
     
     #points = minFace.face_rectangle
     #devito_img = devito_img.resize((points.width, points.height))
