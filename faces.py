@@ -37,7 +37,7 @@ def getConfig(name = 'config.txt'):
     except FileNotFoundError:
         print("'%s' file not found" % filename)
         
-def showPoints(img, face):
+def getLandmarks(face):
     #this simply illustrates the 27 facial points that Azure Face API returns
     
     '''
@@ -120,19 +120,38 @@ def showPoints(img, face):
     m = face.face_landmarks
     
     #all the 27 available face landmarks
-    areas = [m.pupil_left,m.pupil_right,m.mouth_left,m.mouth_right,m.nose_tip,m.eyebrow_left_inner,m.eyebrow_left_outer,m.eyebrow_right_inner,
+    """areas = [m.pupil_left,m.pupil_right,m.mouth_left,m.mouth_right,m.nose_tip,m.eyebrow_left_inner,m.eyebrow_left_outer,m.eyebrow_right_inner,
              m.eyebrow_right_outer, m.eye_left_bottom, m.eye_left_inner, m.eye_left_outer, m.eye_left_top, m.eye_right_bottom, m.eye_right_inner,
              m.eye_right_outer, m.eye_right_top, m.nose_root_left, m.nose_root_right, m.nose_left_alar_top, m.nose_right_alar_top, m.nose_left_alar_out_tip,
-             m.nose_right_alar_out_tip, m.upper_lip_top, m.upper_lip_bottom, m.under_lip_bottom, m.under_lip_top]
-    
+             m.nose_right_alar_out_tip, m.upper_lip_top, m.upper_lip_bottom, m.under_lip_bottom, m.under_lip_top]"""
+
+    #test area
+    areas = [m.eyebrow_left_outer, m.eyebrow_right_outer,  m.mouth_right, m.under_lip_bottom, m.mouth_left] 
+
+    return areas
+
+def showPoints(img,face):
+    landmarks = getLandmarks(face)
+    img = Image.fromarray(img, 'RGB')
     draw = ImageDraw.Draw(img)
     
     #draw dots at all points
-    for area in areas:
+    for area in landmarks:
         x = area.x
         y = area.y
         radius = 2
         draw.ellipse([x-radius,y-radius,x+radius,y+radius], fill='red')
+
+    showImage(img)
+
+def drawMask(coord):
+    coord.append(coord[0]) #repeat the first point to create a 'closed loop'
+    xs, ys = zip(*coord) #create lists of x and y values
+
+    plt.figure()
+    plt.plot(xs,ys) 
+    plt.show()
+
 
 def normalizeDevito(image, dev_img, points):
     #normalizes devito's face to better match baby's skin tone.
@@ -161,6 +180,12 @@ def normalizeDevito(image, dev_img, points):
     #dev_array = [255,255,255] + dev_array
     dev_img = Image.fromarray(dev_array.astype('uint8'), 'RGBA')
     return dev_img
+
+def rotateImage(image, angle):
+  image_center = tuple(np.array(image.shape[1::-1]) / 2)
+  rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
+  result = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
+  return result
         
 def placeDevito(image, dev_img, fc):
     #simply pastes the devito image over the baby's face
@@ -177,11 +202,12 @@ def placeDevito(image, dev_img, fc):
     #paste devito over baby's face
     image.paste(dev_img, box=(points.left,points.top,points.left+points.width,points.top+points.height), mask=dev_img) 
 
-def cloneDevito(image, dev_img, fc):
+def cloneDevito(image, dev_img, fc, devito_face):
     #this function runs poisson image cloning on devito and the baby's face
     
     #get bounding box around baby's face
     points = fc.face_rectangle
+    dev_points = devito_face.face_rectangle
     
     #convert PIL image to numpy array
     image = np.array(image, dtype=np.uint8)
@@ -191,13 +217,21 @@ def cloneDevito(image, dev_img, fc):
     
     #convert devito image to numpy array, discard alpha channel, and resize to fit baby's face
     dev_img = np.array(dev_img, dtype=np.uint8)
-    dev_img = dev_img[:,:,:3]
+    dev_img = dev_img[dev_points.top:dev_points.top+dev_points.height,dev_points.left:dev_points.left+dev_points.width,:3]
+    #dev_img = dev_img[:,:,:3]
     dev_img = cv2.resize(dev_img, dsize=(points.width, points.height), interpolation=cv2.INTER_NEAREST)#dev_img = dev_img.resize((points.width, points.height))
     
+    #match rotation of babys face
+    rotation = -(fc.face_attributes.head_pose.roll)
+    dev_img = rotateImage(dev_img, rotation)
     
     #create source mask that is the size of the baby's face
-    src_mask = 255 * np.ones(dev_img.shape, dev_img.dtype)
-    
+    src_mask = np.zeros(dev_img.shape,dev_img.dtype)
+
+    #hard coded maybe dynamic solution later -- draws polygon in order
+    poly = np.array( [[[58,31], [185,37], [303,95], [270,212], [209,247], [171,247], [119,239], [73,222], [51,184]]], np.int32)
+    cv2.fillPoly(src_mask, poly, (255,255,255))
+  
     #run cv2.seamlessClone using the two images and the source mask
     image = cv2.seamlessClone(dev_img, image, src_mask, (int(points.left + (points.width/2)),int(points.top + (points.height/2))), cv2.NORMAL_CLONE)
     return image
@@ -211,14 +245,24 @@ def processImage(url):
     img = Image.open(io.BytesIO(response.content))
 
     #load in Danny Devito image
-    devito_file = "d_0.png"
+    #devito_file = "d_0.png"
+    devito_file = 'devito_uncropped.png'
+    #devito_file = 'devito1.png'
     devito_img = Image.open(devito_file)
+    devito_stream = open(devito_file, 'r+b')
+
     
     #create a FaceClient object using Azure credentials
     face_client = FaceClient(ENDPOINT, CognitiveServicesCredentials(KEY))
 
     #collect face information using Azure
-    detected_faces = face_client.face.detect_with_url(url=single_face_image_url, return_face_landmarks=True, return_face_attributes=['age','gender'])
+    detected_faces = face_client.face.detect_with_url(url=single_face_image_url, return_face_landmarks=True, return_face_attributes=['age','gender','headPose'])
+    devito_face = face_client.face.detect_with_stream(devito_stream, return_face_landmarks=True)
+
+    if not devito_face:
+        print("Couldnt detect DEVITO")
+        return
+
     if not detected_faces:
         print("No faces, baby or otherwise.")
         return
@@ -226,9 +270,8 @@ def processImage(url):
     for face in detected_faces:
         if float(face.face_attributes.age) < BABY_THRESHOLD:
             #perform processing on each individual baby's face
-            showPoints(img, face)
-            #img = cloneDevito(img, devito_img, face)
-    
+            #showPoints(devito_img, devito_face[0])                   
+            img = cloneDevito(img, devito_img, face, devito_face[0])
     showImage(img)
     
 if __name__ == "__main__":
@@ -246,7 +289,7 @@ if __name__ == "__main__":
     
     #grab urls from command line arguments
     urls = sys.argv[1:]
-    
+
     for url in urls:
         processImage(url)
         
