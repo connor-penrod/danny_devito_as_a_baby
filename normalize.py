@@ -75,4 +75,4 @@ if "__name__" == "__main__":
     plt.figure()
     plt.imshow(match)
 
-plt.show()
+    plt.show()
