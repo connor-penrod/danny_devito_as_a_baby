@@ -8,6 +8,8 @@ from azure.cognitiveservices.vision.face.models import TrainingStatusType, Perso
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
+import normalize
+import inspect
 
 #probably useless
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -19,7 +21,6 @@ def showImage(img):
     arr = np.array(img, dtype=np.uint8)
     plt.figure()
     plt.imshow(arr)
-    
     
 def getConfig(name = 'config.txt'):
     #grabs API key and endpoint data from config.txt file
@@ -38,112 +39,17 @@ def getConfig(name = 'config.txt'):
         print("'%s' file not found" % filename)
         
 def getLandmarks(face):
-    #this simply illustrates the 27 facial points that Azure Face API returns
+    #takes an Azure Face object, and returns a dictionary containing "coordinate_name":(x_coord,y_coord) pairs
+    attributes = inspect.getmembers(face.face_landmarks, lambda a:not(inspect.isroutine(a)))
+    attrs = [a for a in attributes if True in [b in a[0] for b in ["pupil","nose","lip","eye"]]]
+    dict = {}
+    for attr in attrs:
+        dict[attr[0]] = (attr[1].x, attr[1].y)
+        
+    return dict 
     
-    '''
-     :param pupil_left:
-    :type pupil_left: ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param pupil_right:
-    :type pupil_right: ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param nose_tip:
-    :type nose_tip: ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param mouth_left:
-    :type mouth_left: ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param mouth_right:
-    :type mouth_right: ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eyebrow_left_outer:
-    :type eyebrow_left_outer:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eyebrow_left_inner:
-    :type eyebrow_left_inner:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eye_left_outer:
-    :type eye_left_outer:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eye_left_top:
-    :type eye_left_top: ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eye_left_bottom:
-    :type eye_left_bottom:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eye_left_inner:
-    :type eye_left_inner:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eyebrow_right_inner:
-    :type eyebrow_right_inner:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eyebrow_right_outer:
-    :type eyebrow_right_outer:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eye_right_inner:
-    :type eye_right_inner:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eye_right_top:
-    :type eye_right_top:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eye_right_bottom:
-    :type eye_right_bottom:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param eye_right_outer:
-    :type eye_right_outer:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param nose_root_left:
-    :type nose_root_left:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param nose_root_right:
-    :type nose_root_right:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param nose_left_alar_top:
-    :type nose_left_alar_top:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param nose_right_alar_top:
-    :type nose_right_alar_top:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param nose_left_alar_out_tip:
-    :type nose_left_alar_out_tip:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param nose_right_alar_out_tip:
-    :type nose_right_alar_out_tip:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param upper_lip_top:
-    :type upper_lip_top:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param upper_lip_bottom:
-    :type upper_lip_bottom:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param under_lip_top:
-    :type under_lip_top:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    :param under_lip_bottom:
-    :type under_lip_bottom:
-     ~azure.cognitiveservices.vision.face.models.Coordinate
-    '''
-    m = face.face_landmarks
     
-    #all the 27 available face landmarks
-    """areas = [m.pupil_left,m.pupil_right,m.mouth_left,m.mouth_right,m.nose_tip,m.eyebrow_left_inner,m.eyebrow_left_outer,m.eyebrow_right_inner,
-             m.eyebrow_right_outer, m.eye_left_bottom, m.eye_left_inner, m.eye_left_outer, m.eye_left_top, m.eye_right_bottom, m.eye_right_inner,
-             m.eye_right_outer, m.eye_right_top, m.nose_root_left, m.nose_root_right, m.nose_left_alar_top, m.nose_right_alar_top, m.nose_left_alar_out_tip,
-             m.nose_right_alar_out_tip, m.upper_lip_top, m.upper_lip_bottom, m.under_lip_bottom, m.under_lip_top]"""
-
-    #test area
-    areas = [m.eyebrow_left_outer, m.eyebrow_right_outer,  m.mouth_right, m.under_lip_bottom, m.mouth_left] 
-
-    return areas
-
-def showPoints(img,face):
-    landmarks = getLandmarks(face)
-    img = Image.fromarray(img, 'RGB')
-    draw = ImageDraw.Draw(img)
     
-    #draw dots at all points
-    for area in landmarks:
-        x = area.x
-        y = area.y
-        radius = 2
-        draw.ellipse([x-radius,y-radius,x+radius,y+radius], fill='red')
-
-    showImage(img)
-
 def drawMask(coord):
     coord.append(coord[0]) #repeat the first point to create a 'closed loop'
     xs, ys = zip(*coord) #create lists of x and y values
@@ -151,6 +57,14 @@ def drawMask(coord):
     plt.figure()
     plt.plot(xs,ys) 
     plt.show()
+    
+def drawPoints(image, pts):
+    #utility function that will draw dots using whatever points array you give it on the image you give it
+    #its a GENERAL PURPOSE FUNCTION. you hear that brian? GENERAL purpose
+    image = Image.fromarray(image, 'RGB')
+    for pt in pts:
+        ImageDraw.Draw(image).ellipse([pt[0]-2,pt[1]-2,pt[0]+2, pt[1]+2], fill='red')
+    return np.array(image, dtype=np.uint8)
 
 
 def normalizeDevito(image, dev_img, points):
@@ -182,10 +96,14 @@ def normalizeDevito(image, dev_img, points):
     return dev_img
 
 def rotateImage(image, angle):
-  image_center = tuple(np.array(image.shape[1::-1]) / 2)
-  rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
-  result = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_LINEAR)
-  return result
+    image_center = tuple(np.array(image.shape[1::-1]) / 2)
+    rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
+    
+    #print(np.matmul(np.array([5,6]),rot_mat))
+    result = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags=cv2.INTER_NEAREST)
+    
+    
+    return result
         
 def placeDevito(image, dev_img, fc):
     #simply pastes the devito image over the baby's face
@@ -201,13 +119,15 @@ def placeDevito(image, dev_img, fc):
     
     #paste devito over baby's face
     image.paste(dev_img, box=(points.left,points.top,points.left+points.width,points.top+points.height), mask=dev_img) 
+    
+
 
 def cloneDevito(image, dev_img, fc, devito_face):
     #this function runs poisson image cloning on devito and the baby's face
     
     #get bounding box around baby's face
     points = fc.face_rectangle
-    dev_points = devito_face.face_rectangle
+    dev_points = devito_face.face_rectangle   
     
     #convert PIL image to numpy array
     image = np.array(image, dtype=np.uint8)
@@ -215,25 +135,56 @@ def cloneDevito(image, dev_img, fc, devito_face):
     #save alpha channel for later
     dev_alpha = dev_img
     
-    #convert devito image to numpy array, discard alpha channel, and resize to fit baby's face
+    #convert devito image to numpy array, discard alpha channel
     dev_img = np.array(dev_img, dtype=np.uint8)
-    dev_img = dev_img[dev_points.top:dev_points.top+dev_points.height,dev_points.left:dev_points.left+dev_points.width,:3]
-    #dev_img = dev_img[:,:,:3]
-    dev_img = cv2.resize(dev_img, dsize=(points.width, points.height), interpolation=cv2.INTER_NEAREST)#dev_img = dev_img.resize((points.width, points.height))
+    dev_img = dev_img[:,:,:3]
+    
+    #get devito's face landmark coordinates
+    devito_landmarks_dict = getLandmarks(devito_face)
+  
+    
+    
+    #create landmark mask matrix
+    landmark_mask = np.zeros(dev_img.shape[0:2])
+    for key in devito_landmarks_dict:
+        lm = devito_landmarks_dict[key]
+        landmark_mask[int(lm[1])][int(lm[0])] = 1
+    
+    #crop devito image to contain only devito's face
+    dev_img = dev_img[dev_points.top:dev_points.top+dev_points.height,dev_points.left:dev_points.left+dev_points.width,:]
+    landmark_mask = landmark_mask[dev_points.top:dev_points.top+dev_points.height,dev_points.left:dev_points.left+dev_points.width]
+        
+    #resize devito image and mask to match baby face size
+    dev_img = cv2.resize(dev_img, dsize=(points.width, points.height), interpolation=cv2.INTER_NEAREST)
+    landmark_mask = cv2.resize(landmark_mask, dsize=(points.width, points.height), interpolation=cv2.INTER_NEAREST)
     
     #match rotation of babys face
     rotation = -(fc.face_attributes.head_pose.roll)
     dev_img = rotateImage(dev_img, rotation)
+    landmark_mask = rotateImage(landmark_mask, rotation)
+    
+    #move landmark matrix into larger full image matrix and position properly over devito's face
+    landmark_mask_full = np.zeros(image.shape[0:2])
+    landmark_mask_full[points.top:points.top+points.height, points.left:points.left+points.width] = landmark_mask
+    
+    #retrieve landmark coordinates from matrix
+    vals1 = np.where(landmark_mask_full == 1)
+    vals2 = np.where(landmark_mask == 1)
+    landmark_coords_full = list(zip(vals1[1], vals1[0]))  
+    landmark_coords_relative = list(zip(vals2[1], vals2[0]))
+    
+    #normalize skin tones between devito and baby
+    dev_img = normalize.normalize(dev_img, image[points.top:points.top+points.height, points.left:points.left+points.width])
     
     #create source mask that is the size of the baby's face
-    src_mask = np.zeros(dev_img.shape,dev_img.dtype)
+    src_mask = np.ones(dev_img.shape,dev_img.dtype)
 
-    #hard coded maybe dynamic solution later -- draws polygon in order
-    poly = np.array( [[[58,31], [185,37], [303,95], [270,212], [209,247], [171,247], [119,239], [73,222], [51,184]]], np.int32)
-    cv2.fillPoly(src_mask, poly, (255,255,255))
-  
     #run cv2.seamlessClone using the two images and the source mask
-    image = cv2.seamlessClone(dev_img, image, src_mask, (int(points.left + (points.width/2)),int(points.top + (points.height/2))), cv2.NORMAL_CLONE)
+    image = cv2.seamlessClone(dev_img, image, src_mask, (int(points.left+points.width/2), int(points.top+points.height/2)), cv2.NORMAL_CLONE)
+    
+    #display landmarks as dots
+    image = drawPoints(image, landmark_coords_full)
+    
     return image
     
 def processImage(url):
@@ -270,7 +221,7 @@ def processImage(url):
     for face in detected_faces:
         if float(face.face_attributes.age) < BABY_THRESHOLD:
             #perform processing on each individual baby's face
-            #showPoints(devito_img, devito_face[0])                   
+            #showPoints(img, face)                   
             img = cloneDevito(img, devito_img, face, devito_face[0])
     showImage(img)
     

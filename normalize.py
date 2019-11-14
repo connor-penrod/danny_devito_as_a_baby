@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 
 def hist_match(source, template):
     """
@@ -51,6 +52,16 @@ def normalize(source, template):
 
     match = np.dstack((match_r,match_g,match_b))
     match = match.astype(np.uint8)
+    
+    '''
+    R, G, B = cv2.split(match)
+
+    output1_R = cv2.equalizeHist(R)
+    output1_G = cv2.equalizeHist(G)
+    output1_B = cv2.equalizeHist(B)
+
+    match = cv2.merge((output1_R, output1_G, output1_B))
+    '''
     return match
     
 if "__name__" == "__main__":
