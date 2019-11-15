@@ -120,7 +120,20 @@ def placeDevito(image, dev_img, fc):
     #paste devito over baby's face
     image.paste(dev_img, box=(points.left,points.top,points.left+points.width,points.top+points.height), mask=dev_img) 
     
+def maskResize(mask, size):
+    #resizes a mask matrix to preserve as much of the mask values as possible
+    #does not add interpolated values to the matrix either
 
+    new_mask = np.zeros(size)
+    proportion_x = size[0]/mask.shape[1]
+    proportion_y = size[1]/mask.shape[0]
+    
+    for coords in zip(np.where(mask == 1)[0], np.where(mask == 1)[1]):
+        new_mask[int(coords[0]*proportion_y)][int(coords[1]*proportion_x)] = 1
+    return new_mask
+    
+    
+    
 
 def cloneDevito(image, dev_img, fc, devito_face):
     #this function runs poisson image cloning on devito and the baby's face
@@ -149,6 +162,7 @@ def cloneDevito(image, dev_img, fc, devito_face):
     for key in devito_landmarks_dict:
         lm = devito_landmarks_dict[key]
         landmark_mask[int(lm[1])][int(lm[0])] = 1
+        print(int(lm[1]),int(lm[0]))
     
     #crop devito image to contain only devito's face
     dev_img = dev_img[dev_points.top:dev_points.top+dev_points.height,dev_points.left:dev_points.left+dev_points.width,:]
@@ -156,13 +170,14 @@ def cloneDevito(image, dev_img, fc, devito_face):
         
     #resize devito image and mask to match baby face size
     dev_img = cv2.resize(dev_img, dsize=(points.width, points.height), interpolation=cv2.INTER_NEAREST)
-    landmark_mask = cv2.resize(landmark_mask, dsize=(points.width, points.height), interpolation=cv2.INTER_NEAREST)
+    landmark_mask = maskResize(landmark_mask, (points.width,points.height))#landmark_mask = cv2.resize(landmark_mask, dsize=(points.width, points.height), interpolation=cv2.INTER_NEAREST)
+    print(len(np.where(landmark_mask == 1)[0]),len(np.where(landmark_mask > 0)[0]))
     
     #match rotation of babys face
     rotation = -(fc.face_attributes.head_pose.roll)
     dev_img = rotateImage(dev_img, rotation)
     landmark_mask = rotateImage(landmark_mask, rotation)
-    
+
     #move landmark matrix into larger full image matrix and position properly over devito's face
     landmark_mask_full = np.zeros(image.shape[0:2])
     landmark_mask_full[points.top:points.top+points.height, points.left:points.left+points.width] = landmark_mask
@@ -173,17 +188,26 @@ def cloneDevito(image, dev_img, fc, devito_face):
     landmark_coords_full = list(zip(vals1[1], vals1[0]))  
     landmark_coords_relative = list(zip(vals2[1], vals2[0]))
     
+    
     #normalize skin tones between devito and baby
     dev_img = normalize.normalize(dev_img, image[points.top:points.top+points.height, points.left:points.left+points.width])
     
-    #create source mask that is the size of the baby's face
-    src_mask = np.ones(dev_img.shape,dev_img.dtype)
 
+    tight_mask = ((np.min(np.argwhere(landmark_mask == 1)[:,0]), np.min(np.argwhere(landmark_mask == 1)[:,1])),
+                  (np.max(np.argwhere(landmark_mask == 1)[:,0]), np.max(np.argwhere(landmark_mask == 1)[:,1])))
+    
+    #create source mask
+    src_mask = np.zeros(dev_img.shape,dev_img.dtype)
+    
+    src_mask[tight_mask[0][0]:tight_mask[1][0]+60,tight_mask[0][1]:tight_mask[1][1]] = 255
+    
     #run cv2.seamlessClone using the two images and the source mask
-    image = cv2.seamlessClone(dev_img, image, src_mask, (int(points.left+points.width/2), int(points.top+points.height/2)), cv2.NORMAL_CLONE)
+    baby_landmarks_dict = getLandmarks(fc)
+    baby_center = tuple([int(x) for x in np.mean([baby_landmarks_dict[y] for y in baby_landmarks_dict], axis=(0))])
+    image = cv2.seamlessClone(dev_img, image, src_mask, baby_center, cv2.NORMAL_CLONE)
     
     #display landmarks as dots
-    image = drawPoints(image, landmark_coords_full)
+    #image = drawPoints(image, landmark_coords_full)
     
     return image
     
@@ -197,7 +221,7 @@ def processImage(url):
 
     #load in Danny Devito image
     #devito_file = "d_0.png"
-    devito_file = 'devito_uncropped.png'
+    devito_file = 'devito_uncropped_rot.png'
     #devito_file = 'devito1.png'
     devito_img = Image.open(devito_file)
     devito_stream = open(devito_file, 'r+b')
