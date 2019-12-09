@@ -41,7 +41,7 @@ def getConfig(name = 'config.txt'):
 def getLandmarks(face):
     #takes an Azure Face object, and returns a dictionary containing "coordinate_name":(x_coord,y_coord) pairs
     attributes = inspect.getmembers(face.face_landmarks, lambda a:not(inspect.isroutine(a)))
-    attrs = [a for a in attributes if True in [b in a[0] for b in ["pupil","nose","lip","eye"]]]
+    attrs = [a for a in attributes if True in [b in a[0] for b in ["pupil","nose","lip","eye", "mouth"]]]
     dict = {}
     for attr in attrs:
         dict[attr[0]] = (attr[1].x, attr[1].y)
@@ -80,12 +80,12 @@ def normalizeDevito(image, dev_img, points):
     normalization_val = dev_array[1][int(dev_array.shape[1]/2)] - baby_forehead_sample
     normalization_val[3] = 0
 
-    print(baby_forehead_sample)
-    print(dev_array[1][int(dev_array.shape[1]/2)])
-    print(normalization_val)
-    print(dev_array[1][0])
+    #print(baby_forehead_sample)
+    #print(dev_array[1][int(dev_array.shape[1]/2)])
+    #print(normalization_val)
+    #print(dev_array[1][0])
     dev_array += normalization_val
-    print(dev_array[1][0])
+    #print(dev_array[1][0])
     #print(normalization_val)
     #dev_array = dev_array.astype(np.int16)
     #dev_array -= np.array(normalization_val, dtype=np.uint8)
@@ -132,9 +132,6 @@ def maskResize(mask, size):
         new_mask[int(coords[0]*proportion_y)][int(coords[1]*proportion_x)] = 1
     return new_mask
     
-    
-    
-
 def cloneDevito(image, dev_img, fc, devito_face):
     #this function runs poisson image cloning on devito and the baby's face
     
@@ -155,14 +152,20 @@ def cloneDevito(image, dev_img, fc, devito_face):
     #get devito's face landmark coordinates
     devito_landmarks_dict = getLandmarks(devito_face)
   
-    
-    
     #create landmark mask matrix
     landmark_mask = np.zeros(dev_img.shape[0:2])
     for key in devito_landmarks_dict:
+        
+        #pad the cheek region this just gives room for most images so the cheeks blend well
+        x = 0
+        if key == "mouth_left":
+            x -= 70
+        if key == "mouth_right":
+            x += 70
+
         lm = devito_landmarks_dict[key]
-        landmark_mask[int(lm[1])][int(lm[0])] = 1
-        print(int(lm[1]),int(lm[0]))
+        landmark_mask[int(lm[1])][int(lm[0])+x] = 1
+        #print(int(lm[1]),int(lm[0]))
     
     #crop devito image to contain only devito's face
     dev_img = dev_img[dev_points.top:dev_points.top+dev_points.height,dev_points.left:dev_points.left+dev_points.width,:]
@@ -171,7 +174,7 @@ def cloneDevito(image, dev_img, fc, devito_face):
     #resize devito image and mask to match baby face size
     dev_img = cv2.resize(dev_img, dsize=(points.width, points.height), interpolation=cv2.INTER_NEAREST)
     landmark_mask = maskResize(landmark_mask, (points.width,points.height))#landmark_mask = cv2.resize(landmark_mask, dsize=(points.width, points.height), interpolation=cv2.INTER_NEAREST)
-    print(len(np.where(landmark_mask == 1)[0]),len(np.where(landmark_mask > 0)[0]))
+    #print(len(np.where(landmark_mask == 1)[0]),len(np.where(landmark_mask > 0)[0]))
     
     #match rotation of babys face
     rotation = -(fc.face_attributes.head_pose.roll)
@@ -187,25 +190,35 @@ def cloneDevito(image, dev_img, fc, devito_face):
     vals2 = np.where(landmark_mask == 1)
     landmark_coords_full = list(zip(vals1[1], vals1[0]))  
     landmark_coords_relative = list(zip(vals2[1], vals2[0]))
-    
-    
+      
     #normalize skin tones between devito and baby
     dev_img = normalize.normalize(dev_img, image[points.top:points.top+points.height, points.left:points.left+points.width])
     
-
-    tight_mask = ((np.min(np.argwhere(landmark_mask == 1)[:,0]), np.min(np.argwhere(landmark_mask == 1)[:,1])),
-                  (np.max(np.argwhere(landmark_mask == 1)[:,0]), np.max(np.argwhere(landmark_mask == 1)[:,1])))
+    #keeping this just incase -- still have no idea what is going on here
+    #tight_mask = ((np.min(np.argwhere(landmark_mask == 1)[:,0]), np.min(np.argwhere(landmark_mask == 1)[:,1])),
+    #              (np.max(np.argwhere(landmark_mask == 1)[:,0]), np.max(np.argwhere(landmark_mask == 1)[:,1])))
     
     #create source mask
     src_mask = np.zeros(dev_img.shape,dev_img.dtype)
+
+    #get the points of devitos face
+    points = np.asarray(landmark_coords_relative, np.int32)
+    #convert points to a convex hull
+    convexhull = cv2.convexHull(points)
+    #cv2.polylines(image, [testconvex], True, (255, 0, 0), 3) # traces the polygon so you can see how it is being drawn
+
+    #fill in polygon to create mask
+    cv2.fillConvexPoly(src_mask, convexhull, (255,255,255))
     
-    src_mask[tight_mask[0][0]:tight_mask[1][0]+60,tight_mask[0][1]:tight_mask[1][1]] = 255
-    
+    #src_mask[tight_mask[0][0]:tight_mask[1][0]+5,tight_mask[0][1]:tight_mask[1][1]+5] = 255  --- old hard code way
+
     #run cv2.seamlessClone using the two images and the source mask
     baby_landmarks_dict = getLandmarks(fc)
-    baby_center = tuple([int(x) for x in np.mean([baby_landmarks_dict[y] for y in baby_landmarks_dict], axis=(0))])
-    image = cv2.seamlessClone(dev_img, image, src_mask, baby_center, cv2.NORMAL_CLONE)
-    
+    #baby_center = tuple([int(x) for x in np.mean([baby_landmarks_dict[y] for y in baby_landmarks_dict], axis=(0))]) --- nose center seems to produce better results
+    nose_center = baby_landmarks_dict["nose_tip"]
+    nose_center = (int(nose_center[0]), int(nose_center[1])) # convert nose coordinates to int for seamless blending
+    image = cv2.seamlessClone(dev_img, image, src_mask, nose_center, cv2.NORMAL_CLONE)
+
     #display landmarks as dots
     #image = drawPoints(image, landmark_coords_full)
     
